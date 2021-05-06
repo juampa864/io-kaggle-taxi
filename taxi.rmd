@@ -1,0 +1,478 @@
+---
+title: "Kaggle NY Taxi Duration"
+output: html_notebook
+---
+
+## Libraries
+```{r}
+library(dplyr)
+library(ggplot2)
+library(caret)
+library(MASS)
+library(e1071)
+library(neuralnet)
+library(corrplot)
+library(REdaS)
+```
+
+## Data
+```{r}
+data = read.csv("train.csv")
+```
+
+```{r}
+dataset = data
+```
+
+```{r}
+# x = seq(1, length(dataset$trip_duration))
+# dataset = na.omit(dataset)
+# 
+# mu = mean(dataset$trip_duration, na.rm = T)
+# sd = sd(dataset$trip_duration, na.rm = T)
+# 
+# dataset$trip_duration = ifelse(dataset$trip_duration > 1000000, 86392, dataset$trip_duration)
+# 
+# max = max(dataset$trip_duration)
+# min = min(dataset$trip_duration)
+# 
+# for (i in 1:length(dataset$trip_duration)){
+#   temp[i] = (dataset$trip_duration[i] - min) / (max - min)
+# }
+# 
+# temp = complete.cases(dataset$trip_duration)
+# 
+# dataset$trip_duration = temp
+# plot(x, temp)
+# max(dataset$trip_duration)
+```
+
+## Remove columns
+```{r}
+dataset = dataset %>%
+  dplyr::select(-c(store_and_fwd_flag, id, vendor_id))
+dataset
+```
+
+## Functions
+### Getting distance
+```{r}
+haversine <- function(row_lon_lat) {
+  
+  pick_long = row_lon_lat[1]
+  pick_lat = row_lon_lat[2]
+  drop_long = row_lon_lat[3]
+  drop_lat = row_lon_lat[4]
+  
+  R = 6371
+  
+  lon = apply(array(c(pick_long, drop_long)), MARGIN = 1, deg2rad)
+  lat = apply(array(c(pick_lat, drop_lat)), MARGIN = 1, deg2rad)
+  
+  dlon = lon[2] - lon[1]
+  dlat = lat[2] - lat[1]
+  
+  a = sin(dlat/2)^2 + cos(lat[1]) * cos(lat[2]) * sin(dlon/2)^2
+  c = 2 * asin(sqrt(a))
+
+  distance = R * c
+}
+```
+
+### Remove and replace NA values
+```{r}
+data_rm.na = function(data){
+  value = 0
+  
+  mu = mean(data, na.rm = T)
+  sd = sd(data, na.rm = T)
+  
+  value = ifelse(is.na(data), as.integer(rnorm(1, mu, sd)), data)
+  value = ifelse(value < 0, value*-1, value)
+
+  value
+}
+```
+
+### Calculate Pickup time
+Inserts NA values where 
+```{r}
+get.time = function(data){
+  
+  len = length(data)
+  temp = 0
+  temp_date = 0
+  temp_hour = 0
+  time = 0
+  
+  # Splits date and time
+  for (i in 1:len){
+    temp[i] = strsplit(data[i], " ")
+  }
+  
+  # Splits into smaller time units. 
+  # i.e. hours, minutes, seconds
+  for (i in 1:len){
+    t = strsplit(temp[[i]][1], "-")
+    t2 = strsplit(temp[[i]][2], ":")
+    temp_date[i] = t[1]
+    temp_hour[i] = t2[1]
+  }
+  
+  # Removes trips that start and end in different days
+  for (i in 1:len) {
+    if (as.integer(substr(temp[[i]][1], 9, 10)) != as.integer(substr(d_temp[[i]][1], 9, 10))){
+      temp[[i]][1] = NA
+    }
+  }
+
+  # Converts time to seconds
+  for (i in 1:len){
+    time[i] = ifelse(is.na(temp[[i]][1]), NA, as.integer(temp_hour[[i]][1])*3600 + as.integer(temp_hour[[i]][2])*60 + as.integer(temp_hour[[i]][3]))
+  }
+  
+  # Returns array with time in seconds
+  time
+}
+```
+
+### Apply distance function to dataset
+```{r}
+# Temporal dataset to calculate distance
+datatemp = dataset %>%
+  dplyr::select(c(pickup_longitude, pickup_latitude, dropoff_longitude, dropoff_latitude))
+
+# Get distance from latitude and longitude
+datadistance = apply(
+  datatemp,
+  1, 
+  haversine)
+
+# Add distance to the original dataset
+dataset$distance = datadistance
+
+# Drop longitude and latitude columns
+dataset_distance = dataset %>%
+  dplyr::select(-c(pickup_longitude, pickup_latitude, dropoff_longitude, dropoff_latitude))
+dataset_distance
+
+dataset 
+```
+
+```{r}
+# temp = 0
+# temp_date = 0
+# temp_hour = 0
+# 
+# d_temp = 0
+# d_temp_date = 0
+# d_temp_hour = 0
+# 
+# pickup_time = 0
+# dropoff_time = 0
+
+
+## Pickup time-hour
+# pick_len = length(dataset$pickup_datetime)
+# for (i in 1:pick_len){
+#   temp[i] = strsplit(dataset$pickup_datetime[i], " ")
+# }
+# 
+# for (i in 1:pick_len){
+#   t = strsplit(temp[[i]][1], "-")
+#   t2 = strsplit(temp[[i]][2], ":")
+#   temp_date[i] = t[1]
+#   temp_hour[i] = t2[1]
+# }
+# 
+# drop_len = length(dataset$dropoff_datetime)
+# for (i in 1:drop_len){
+#   d_temp[i] = strsplit(dataset$dropoff_datetime[i], " ")
+# }
+# 
+# for (i in 1:drop_len){
+#   t = strsplit(d_temp[[i]][1], "-")
+#   t2 = strsplit(d_temp[[i]][2], ":")
+#   d_temp_date[i] = t[1]
+#   d_temp_hour[i] = t2[1]
+# }
+```
+
+```{r}
+# j = 0
+# k = 0
+# head(temp)
+# head(d_temp)
+# for (i in 1:length(dataset$pickup_datetime)) {
+#   if (as.integer(substr(temp[[i]][1], 9, 10)) != as.integer(substr(d_temp[[i]][1], 9, 10))){
+#     temp[[i]][1] = NA
+#     d_temp[[i]][1] = NA
+#   }
+# }
+# 
+# unique(k)
+```
+
+```{r}
+# for (i in 1:length(dataset$pickup_datetime)){
+#   dropoff_time[i] = ifelse(is.na(d_temp[[i]][1]), NA, as.integer(d_temp_hour[[i]][1])*3600 + as.integer(d_temp_hour[[i]][2])*60 +  as.integer(d_temp_hour[[i]][3]))
+# }
+# 
+# for (i in 1:pick_len){
+#   pickup_time[i] = ifelse(is.na(temp[[i]][1]), NA, as.integer(temp_hour[[i]][1])*3600 + as.integer(temp_hour[[i]][2])*60 +  as.integer(temp_hour[[i]][3]))
+# }
+
+#head(dropoff_time)
+#head(pickup_time)
+#head(dataset$trip_duration)
+```
+
+```{r}
+# j = dropoff_time[complete.cases(dropoff_time)]
+# length(j)
+# 
+# k = dropoff_time[complete.cases(dropoff_time)]
+# length(k)
+```
+
+### Calculate times from datetime values
+```{r}
+# Dropoff_time is not needed
+# dropoff_time = get.time(dataset$dropff_datetime)
+# dataset$dropoff_time = dropoff_time
+
+# Get times in seconds
+pickup_time = get.time(dataset$pickup_datetime)
+
+# Add data to original dataset
+dataset$pickup_time = pickup_time
+
+# Omit all NA data
+dataset = na.omit(dataset)
+
+# Only usefull data
+dataset = dataset %>%
+  dplyr::select(c(passenger_count, trip_duration, distance, pickup_time))
+dataset
+```
+
+
+```{r}
+# dataset$trip_duration = ifelse(dataset$trip_duration > 87000, 86392, dataset$trip_duration)
+#  
+# max = max(dataset$trip_duration)
+# min = min(dataset$trip_duration)
+#  
+# for (i in 1:length(dataset$trip_duration)){
+#   temp[i] = (dataset$trip_duration[i] - min) / (max - min)
+# }
+```
+
+
+```{r}
+# dataset$passenger_count = data_trimm(dataset$passenger_count)
+# dataset$trip_duration = data_trimm(dataset$trip_duration)
+# dataset$distance = data_trimm(dataset$distance)
+# dataset$pickup = data_trimm(dataset$pickup)
+# dataset$dropoff = data_trimm(dataset$dropoff)
+# 
+# dataset
+```
+
+## Data partition
+```{r}
+split = sample.split(dataset, SplitRatio = 0.7)
+train_dataset = subset(dataset, split == "TRUE")
+test_dataset = subset(dataset, split == "FALSE")
+```
+
+## Linear Models
+```{r}
+# Variable to predict
+trip_duration = train_dataset$trip_duration
+
+# Variables for prediction
+distance = train_dataset$distance
+passenger_count = train_dataset$passenger_count
+pickup_time = train_dataset$pickup_time
+
+
+# linear_modelx1 =  dataset %>% lm(formula = y ~ x1)
+# linear_modelx2 =  dataset %>% lm(formula = y ~ x2)
+# 
+# linear_modelx4 =  dataset %>% lm(formula = y ~ x1 + x2)
+# linear_modelx5 =  dataset %>% lm(formula = y ~ x1 + x3)
+# linear_modelx6 = dataset %>% lm(formula = y ~ x2 + x3)
+# 
+# linear_modelx7 = dataset %>% lm(formula = y ~ x1 + x2 + x3)
+
+linear_modelx8 = train_dataset %>% lm(formula = trip_duration ~ distance + passenger_count + pickup_time)
+```
+
+### Summaries
+```{r}
+# summary(linear_modelx1)
+# summary(linear_modelx2)
+# summary(linear_modelx3)
+# 
+# summary(linear_modelx4)
+# summary(linear_modelx5)
+# summary(linear_modelx6)
+# 
+# summary(linear_modelx7)
+summary(linear_modelx8)
+
+# summx1 = summary(linear_modelx1)
+# summx2 = summary(linear_modelx2)
+# summx3 = summary(linear_modelx3)
+# summx4 = summary(linear_modelx4)
+# summx5 = summary(linear_modelx5)
+# summx6 = summary(linear_modelx6)
+# summx7 = summary(linear_modelx7)
+# summx8 = summary(linear_modelx8)
+```
+
+## Model's table - R Squared and F Statistic
+```{r}
+# data_table = data.frame(
+#   Xi = c("Y ~ X1", "Y ~ X2", "Y ~ X3", "Y ~ X1 + X2", "Y ~ X1 + X3", "Y ~ X2 + X3", "Y ~ X2 + X3 + X1", "Y ~ ."),
+#   
+#  R_Squared = c(summx1$r.squared, 
+#                summx2$r.squared, 
+#                summx3$r.squared, 
+#                summx4$r.squared, 
+#                summx5$r.squared, 
+#                summx6$r.squared, 
+#                summx7$r.squared,
+#                summx8$r.squared),
+#   
+#   F_Statistic = c(summx1$fstatistic[1], 
+#                   summx2$fstatistic[1],
+#                   summx3$fstatistic[1], 
+#                   summx4$fstatistic[1], 
+#                   summx5$fstatistic[1], 
+#                   summx6$fstatistic[1], 
+#                   summx7$fstatistic[1],
+#                   summx8$fstatistic[1])
+#   )
+# data_table
+```
+
+## Make predictions
+```{r}
+duration_pred = predict(object = linear_modelx8, newdata = test_dataset)
+error = rmsle(test_dataset$trip_duration, duration_pred)
+
+# This should be at least 0.4 or lower
+error
+```
+
+
+## Apply best linear model to test data
+```{r}
+dataset_test = read.csv("test.csv")
+dataset_test
+
+id = dataset_test$id
+
+dataset_test = dataset_test %>%
+  dplyr::select(-c(store_and_fwd_flag, id, vendor_id))
+dataset_test
+```
+
+## Get distance
+```{r}
+datatemp = dataset_test %>%
+  dplyr::select(c(pickup_longitude, pickup_latitude, dropoff_longitude, dropoff_latitude))
+# datatemp
+
+# Esto toma tiempo 
+datadistance = apply(
+  datatemp,
+  1, 
+  haversine)
+
+dataset_test$distance = datadistance
+
+dataset_test = dataset_test %>%
+  dplyr::select(-c(pickup_longitude, pickup_latitude, dropoff_longitude, dropoff_latitude))
+dataset_test
+```
+
+
+```{r}
+## Pickup time-hour
+# pick_len = length(dataset_test$pickup_datetime)
+# temp = 0
+# temp_date = 0
+# temp_hour = 0
+# pickup_time = 0
+# for (i in 1:pick_len){
+#   temp[i] = strsplit(dataset_test$pickup_datetime[i], " ")
+# }
+# 
+# for (i in 1:pick_len){
+#   t = strsplit(temp[[i]][1], "-")
+#   t2 = strsplit(temp[[i]][2], ":")
+#   temp_date[i] = t[1]
+#   temp_hour[i] = t2[1]
+# }
+# 
+# for (i in 1:pick_len){
+#   pickup_time[i] = ifelse(is.na(temp[[i]][1]), NA, as.integer(temp_hour[[i]][1])*3600 + as.integer(temp_hour[[i]][2])*60 + # as.integer(temp_hour[[i]][3]))
+# }
+
+pickup_time = 0
+pickup_time = get.time(dataset_test$pickup_datetime)
+dataset_test$pickup_time = pickup_time
+
+dataset_test = dataset_test %>%
+  dplyr::select(-c(pickup_datetime))
+dataset_test
+```
+
+## Make predictions
+```{r}
+duration_pred = predict(object = linear_modelx8, newdata = dataset_test)
+```
+
+## Construct out-dataframe
+```{r}
+out_dataframe = data.frame(id = id, trip_duration = duration_pred)
+out_dataframe
+```
+
+## Save data in Kaggle format for the linear model
+```{r}
+write.csv(out_dataframe, "kaggle_data.csv", quote = F, row.names = F)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -13,6 +13,10 @@ library(e1071)
 library(neuralnet)
 library(corrplot)
 library(REdaS)
+library(Metrics)
+library(corrplot)
+library(caTools)
+
 ```
 
 ## Data
@@ -22,36 +26,6 @@ data = read.csv("train.csv")
 
 ```{r}
 dataset = data
-```
-
-```{r}
-# x = seq(1, length(dataset$trip_duration))
-# dataset = na.omit(dataset)
-# 
-# mu = mean(dataset$trip_duration, na.rm = T)
-# sd = sd(dataset$trip_duration, na.rm = T)
-# 
-# dataset$trip_duration = ifelse(dataset$trip_duration > 1000000, 86392, dataset$trip_duration)
-# 
-# max = max(dataset$trip_duration)
-# min = min(dataset$trip_duration)
-# 
-# for (i in 1:length(dataset$trip_duration)){
-#   temp[i] = (dataset$trip_duration[i] - min) / (max - min)
-# }
-# 
-# temp = complete.cases(dataset$trip_duration)
-# 
-# dataset$trip_duration = temp
-# plot(x, temp)
-# max(dataset$trip_duration)
-```
-
-## Remove columns
-```{r}
-dataset = dataset %>%
-  dplyr::select(-c(store_and_fwd_flag, id, vendor_id))
-dataset
 ```
 
 ## Functions
@@ -119,13 +93,6 @@ get.time = function(data){
     temp_hour[i] = t2[1]
   }
   
-  # Removes trips that start and end in different days
-  for (i in 1:len) {
-    if (as.integer(substr(temp[[i]][1], 9, 10)) != as.integer(substr(d_temp[[i]][1], 9, 10))){
-      temp[[i]][1] = NA
-    }
-  }
-
   # Converts time to seconds
   for (i in 1:len){
     time[i] = ifelse(is.na(temp[[i]][1]), NA, as.integer(temp_hour[[i]][1])*3600 + as.integer(temp_hour[[i]][2])*60 + as.integer(temp_hour[[i]][3]))
@@ -136,6 +103,13 @@ get.time = function(data){
 }
 ```
 
+### Remove columns
+```{r}
+dataset = dataset %>%
+  dplyr::select(-c(store_and_fwd_flag, id, vendor_id))
+dataset
+```
+
 ### Apply distance function to dataset
 ```{r}
 # Temporal dataset to calculate distance
@@ -143,6 +117,7 @@ datatemp = dataset %>%
   dplyr::select(c(pickup_longitude, pickup_latitude, dropoff_longitude, dropoff_latitude))
 
 # Get distance from latitude and longitude
+# This takes time
 datadistance = apply(
   datatemp,
   1, 
@@ -159,82 +134,6 @@ dataset_distance
 dataset 
 ```
 
-```{r}
-# temp = 0
-# temp_date = 0
-# temp_hour = 0
-# 
-# d_temp = 0
-# d_temp_date = 0
-# d_temp_hour = 0
-# 
-# pickup_time = 0
-# dropoff_time = 0
-
-
-## Pickup time-hour
-# pick_len = length(dataset$pickup_datetime)
-# for (i in 1:pick_len){
-#   temp[i] = strsplit(dataset$pickup_datetime[i], " ")
-# }
-# 
-# for (i in 1:pick_len){
-#   t = strsplit(temp[[i]][1], "-")
-#   t2 = strsplit(temp[[i]][2], ":")
-#   temp_date[i] = t[1]
-#   temp_hour[i] = t2[1]
-# }
-# 
-# drop_len = length(dataset$dropoff_datetime)
-# for (i in 1:drop_len){
-#   d_temp[i] = strsplit(dataset$dropoff_datetime[i], " ")
-# }
-# 
-# for (i in 1:drop_len){
-#   t = strsplit(d_temp[[i]][1], "-")
-#   t2 = strsplit(d_temp[[i]][2], ":")
-#   d_temp_date[i] = t[1]
-#   d_temp_hour[i] = t2[1]
-# }
-```
-
-```{r}
-# j = 0
-# k = 0
-# head(temp)
-# head(d_temp)
-# for (i in 1:length(dataset$pickup_datetime)) {
-#   if (as.integer(substr(temp[[i]][1], 9, 10)) != as.integer(substr(d_temp[[i]][1], 9, 10))){
-#     temp[[i]][1] = NA
-#     d_temp[[i]][1] = NA
-#   }
-# }
-# 
-# unique(k)
-```
-
-```{r}
-# for (i in 1:length(dataset$pickup_datetime)){
-#   dropoff_time[i] = ifelse(is.na(d_temp[[i]][1]), NA, as.integer(d_temp_hour[[i]][1])*3600 + as.integer(d_temp_hour[[i]][2])*60 +  as.integer(d_temp_hour[[i]][3]))
-# }
-# 
-# for (i in 1:pick_len){
-#   pickup_time[i] = ifelse(is.na(temp[[i]][1]), NA, as.integer(temp_hour[[i]][1])*3600 + as.integer(temp_hour[[i]][2])*60 +  as.integer(temp_hour[[i]][3]))
-# }
-
-#head(dropoff_time)
-#head(pickup_time)
-#head(dataset$trip_duration)
-```
-
-```{r}
-# j = dropoff_time[complete.cases(dropoff_time)]
-# length(j)
-# 
-# k = dropoff_time[complete.cases(dropoff_time)]
-# length(k)
-```
-
 ### Calculate times from datetime values
 ```{r}
 # Dropoff_time is not needed
@@ -242,51 +141,57 @@ dataset
 # dataset$dropoff_time = dropoff_time
 
 # Get times in seconds
+# This takes time
 pickup_time = get.time(dataset$pickup_datetime)
 
 # Add data to original dataset
 dataset$pickup_time = pickup_time
-
-# Omit all NA data
-dataset = na.omit(dataset)
 
 # Only usefull data
 dataset = dataset %>%
   dplyr::select(c(passenger_count, trip_duration, distance, pickup_time))
 dataset
 ```
-
-
+### Normalization
 ```{r}
-# dataset$trip_duration = ifelse(dataset$trip_duration > 87000, 86392, dataset$trip_duration)
-#  
+# temp_trip = dataset$trip_duration
+# temp_pick = dataset$pickup_time
+# 
+# dataset$trip_duration = ifelse(dataset$trip_duration > 1000000, 86392, dataset$trip_duration)
+# 
 # max = max(dataset$trip_duration)
 # min = min(dataset$trip_duration)
-#  
+# temp = 0
 # for (i in 1:length(dataset$trip_duration)){
 #   temp[i] = (dataset$trip_duration[i] - min) / (max - min)
 # }
-```
-
-
-```{r}
-# dataset$passenger_count = data_trimm(dataset$passenger_count)
-# dataset$trip_duration = data_trimm(dataset$trip_duration)
-# dataset$distance = data_trimm(dataset$distance)
-# dataset$pickup = data_trimm(dataset$pickup)
-# dataset$dropoff = data_trimm(dataset$dropoff)
+# dataset$trip_duration = temp
+# 
+# max = max(dataset$pickup_time)
+# min = min(dataset$pickup_time)
+# temp = 0
+# for (i in 1:length(dataset$pickup_time)){
+#   temp[i] = (dataset$pickup_time[i] - min) / (max - min)
+# }
+# dataset$pickup_time = temp
 # 
 # dataset
 ```
 
-## Data partition
+### Remove NA values
+```{r}
+# Omit all NA data
+dataset = na.omit(dataset)
+```
+
+### Data partition
 ```{r}
 split = sample.split(dataset, SplitRatio = 0.7)
 train_dataset = subset(dataset, split == "TRUE")
 test_dataset = subset(dataset, split == "FALSE")
 ```
 
-## Linear Models
+### Linear Models
 ```{r}
 # Variable to predict
 trip_duration = train_dataset$trip_duration
@@ -296,69 +201,16 @@ distance = train_dataset$distance
 passenger_count = train_dataset$passenger_count
 pickup_time = train_dataset$pickup_time
 
-
-# linear_modelx1 =  dataset %>% lm(formula = y ~ x1)
-# linear_modelx2 =  dataset %>% lm(formula = y ~ x2)
-# 
-# linear_modelx4 =  dataset %>% lm(formula = y ~ x1 + x2)
-# linear_modelx5 =  dataset %>% lm(formula = y ~ x1 + x3)
-# linear_modelx6 = dataset %>% lm(formula = y ~ x2 + x3)
-# 
-# linear_modelx7 = dataset %>% lm(formula = y ~ x1 + x2 + x3)
-
 linear_modelx8 = train_dataset %>% lm(formula = trip_duration ~ distance + passenger_count + pickup_time)
 ```
 
 ### Summaries
 ```{r}
-# summary(linear_modelx1)
-# summary(linear_modelx2)
-# summary(linear_modelx3)
-# 
-# summary(linear_modelx4)
-# summary(linear_modelx5)
-# summary(linear_modelx6)
-# 
-# summary(linear_modelx7)
-summary(linear_modelx8)
-
-# summx1 = summary(linear_modelx1)
-# summx2 = summary(linear_modelx2)
-# summx3 = summary(linear_modelx3)
-# summx4 = summary(linear_modelx4)
-# summx5 = summary(linear_modelx5)
-# summx6 = summary(linear_modelx6)
-# summx7 = summary(linear_modelx7)
-# summx8 = summary(linear_modelx8)
+summx8 = summary(linear_modelx8)
+summx8
 ```
 
-## Model's table - R Squared and F Statistic
-```{r}
-# data_table = data.frame(
-#   Xi = c("Y ~ X1", "Y ~ X2", "Y ~ X3", "Y ~ X1 + X2", "Y ~ X1 + X3", "Y ~ X2 + X3", "Y ~ X2 + X3 + X1", "Y ~ ."),
-#   
-#  R_Squared = c(summx1$r.squared, 
-#                summx2$r.squared, 
-#                summx3$r.squared, 
-#                summx4$r.squared, 
-#                summx5$r.squared, 
-#                summx6$r.squared, 
-#                summx7$r.squared,
-#                summx8$r.squared),
-#   
-#   F_Statistic = c(summx1$fstatistic[1], 
-#                   summx2$fstatistic[1],
-#                   summx3$fstatistic[1], 
-#                   summx4$fstatistic[1], 
-#                   summx5$fstatistic[1], 
-#                   summx6$fstatistic[1], 
-#                   summx7$fstatistic[1],
-#                   summx8$fstatistic[1])
-#   )
-# data_table
-```
-
-## Make predictions
+### Make predictions
 ```{r}
 duration_pred = predict(object = linear_modelx8, newdata = test_dataset)
 error = rmsle(test_dataset$trip_duration, duration_pred)
@@ -380,7 +232,7 @@ dataset_test = dataset_test %>%
 dataset_test
 ```
 
-## Get distance
+### Get distance
 ```{r}
 datatemp = dataset_test %>%
   dplyr::select(c(pickup_longitude, pickup_latitude, dropoff_longitude, dropoff_latitude))
@@ -399,50 +251,39 @@ dataset_test = dataset_test %>%
 dataset_test
 ```
 
-
+### Pickup time-hour
 ```{r}
-## Pickup time-hour
-# pick_len = length(dataset_test$pickup_datetime)
-# temp = 0
-# temp_date = 0
-# temp_hour = 0
-# pickup_time = 0
-# for (i in 1:pick_len){
-#   temp[i] = strsplit(dataset_test$pickup_datetime[i], " ")
-# }
-# 
-# for (i in 1:pick_len){
-#   t = strsplit(temp[[i]][1], "-")
-#   t2 = strsplit(temp[[i]][2], ":")
-#   temp_date[i] = t[1]
-#   temp_hour[i] = t2[1]
-# }
-# 
-# for (i in 1:pick_len){
-#   pickup_time[i] = ifelse(is.na(temp[[i]][1]), NA, as.integer(temp_hour[[i]][1])*3600 + as.integer(temp_hour[[i]][2])*60 + # as.integer(temp_hour[[i]][3]))
-# }
-
 pickup_time = 0
 pickup_time = get.time(dataset_test$pickup_datetime)
 dataset_test$pickup_time = pickup_time
 
 dataset_test = dataset_test %>%
   dplyr::select(-c(pickup_datetime))
+
+# max = max(dataset_test$pickup_time)
+# min = min(dataset_test$pickup_time)
+# temp = 0
+# for (i in 1:length(dataset_test$pickup_time)){
+#   temp[i] = (dataset_test$pickup_time[i] - min) / (max - min)
+# }
+# dataset_test$pickup_time = temp
+# 
+
 dataset_test
 ```
 
-## Make predictions
+### Make predictions
 ```{r}
 duration_pred = predict(object = linear_modelx8, newdata = dataset_test)
 ```
 
-## Construct out-dataframe
+### Construct out-dataframe
 ```{r}
 out_dataframe = data.frame(id = id, trip_duration = duration_pred)
 out_dataframe
 ```
 
-## Save data in Kaggle format for the linear model
+### Save data in Kaggle format for the linear model
 ```{r}
 write.csv(out_dataframe, "kaggle_data.csv", quote = F, row.names = F)
 ```

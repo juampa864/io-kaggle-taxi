@@ -53,23 +53,22 @@ haversine <- function(row_lon_lat) {
 }
 ```
 
-### Remove and replace NA values
+### Remove and replace NA values UNUSED
 ```{r}
-data_rm.na = function(data){
-  value = 0
-  
-  mu = mean(data, na.rm = T)
-  sd = sd(data, na.rm = T)
-  
-  value = ifelse(is.na(data), as.integer(rnorm(1, mu, sd)), data)
-  value = ifelse(value < 0, value*-1, value)
-
-  value
-}
+# data_rm.na = function(data){
+#   value = 0
+#   
+#   mu = mean(data, na.rm = T)
+#   sd = sd(data, na.rm = T)
+#   
+#   value = ifelse(is.na(data), as.integer(rnorm(1, mu, sd)), data)
+#   value = ifelse(value < 0, value*-1, value)
+# 
+#   value
+# }
 ```
 
 ### Calculate Pickup time
-Inserts NA values where 
 ```{r}
 get.time = function(data){
   
@@ -95,7 +94,7 @@ get.time = function(data){
   
   # Converts time to seconds
   for (i in 1:len){
-    time[i] = ifelse(is.na(temp[[i]][1]), NA, as.integer(temp_hour[[i]][1])*3600 + as.integer(temp_hour[[i]][2])*60 + as.integer(temp_hour[[i]][3]))
+    time[i] = as.integer(temp_hour[[i]][1])*3600 + as.integer(temp_hour[[i]][2])*60 + as.integer(temp_hour[[i]][3])
   }
   
   # Returns array with time in seconds
@@ -126,11 +125,6 @@ datadistance = apply(
 # Add distance to the original dataset
 dataset$distance = datadistance
 
-# Drop longitude and latitude columns
-dataset_distance = dataset %>%
-  dplyr::select(-c(pickup_longitude, pickup_latitude, dropoff_longitude, dropoff_latitude))
-dataset_distance
-
 dataset 
 ```
 
@@ -152,20 +146,41 @@ dataset = dataset %>%
   dplyr::select(c(passenger_count, trip_duration, distance, pickup_time))
 dataset
 ```
-### Normalization
+### Visualize trip_duration and pickup_time
+```{r}
+# This indicates skewed data graphically
+ggplot(data = dataset, aes(trip_duration)) + geom_histogram()
+```
+
+### Skewness of the variables
+```{r}
+# skewness = 0  =>  perfect symemtry
+# skewness <=  -1 || skewness >= 1  =>  highly skewed
+# -1 <= skewness < -0.5 || 0.5 <= skewness < 1  =>  moderally skewed
+# -0.5 <= skewness < 0 || 0 <= skewness < 0.5  =>  moderally symmetrical
+
+skewness(dataset$trip_duration) # 343.1632 high af
+skewness(dataset$pickup_time) # -0.44 just ok
+skewness(dataset$distance) # 32.63091 high
+skewness(dataset$passenger_count) # 2.1280 high
+```
+
+
+```{r}
+# No aparent meaningful between both variables.
+ggplot(dataset, aes(pickup_time, trip_duration)) + geom_point()
+```
+
+````{r}
+ggplot(data = dataset, aes(x = pickup_time, y = trip_duration)) +
+  geom_point() +
+  scale_x_log10() + scale_y_log10()
+```
+
+### Min-Max Normalization UNUSED
 ```{r}
 # temp_trip = dataset$trip_duration
 # temp_pick = dataset$pickup_time
-# 
-# dataset$trip_duration = ifelse(dataset$trip_duration > 1000000, 86392, dataset$trip_duration)
-# 
-# max = max(dataset$trip_duration)
-# min = min(dataset$trip_duration)
-# temp = 0
-# for (i in 1:length(dataset$trip_duration)){
-#   temp[i] = (dataset$trip_duration[i] - min) / (max - min)
-# }
-# dataset$trip_duration = temp
 # 
 # max = max(dataset$pickup_time)
 # min = min(dataset$pickup_time)
@@ -178,6 +193,8 @@ dataset
 # dataset
 ```
 
+
+## Training 
 ### Remove NA values
 ```{r}
 # Omit all NA data
@@ -200,27 +217,51 @@ trip_duration = train_dataset$trip_duration
 distance = train_dataset$distance
 passenger_count = train_dataset$passenger_count
 pickup_time = train_dataset$pickup_time
-
-linear_modelx8 = train_dataset %>% lm(formula = trip_duration ~ distance + passenger_count + pickup_time)
 ```
+
+### Normal linear model
+```{r}
+linear_model = train_dataset %>% lm(formula = trip_duration ~ distance + passenger_count + pickup_time)
+```
+
+### Log Transform linear models
+```{r}
+# log_linear_model1 = train_dataset %>% lm(formula = log1p(trip_duration) ~ distance + passenger_count + pickup_time)
+# log_linear_model3 = train_dataset %>% lm(formula = log1p(trip_duration) ~ log1p(distance) + log1p(passenger_count) + pickup_time)
+# log_linear_model4 = train_dataset %>% lm(formula = trip_duration ~ log1p(distance) + passenger_count + pickup_time)
+
+# Best Log model based on the summaries
+log_linear_model = train_dataset %>% lm(formula = log1p(trip_duration) ~ log1p(distance) + passenger_count + pickup_time)
+```
+
 
 ### Summaries
 ```{r}
-summx8 = summary(linear_modelx8)
-summx8
+# summ1 = summary(log_linear_model1)
+# summ3 = summary(log_linear_model3)
+# summ4 = summary(log_linear_model4)
+
+summ = summary(linear_model)
+summ2 = summary(log_linear_model2)
+
+# summ1
+# summ2
+# summ3
+summ 
+summ4
 ```
 
 ### Make predictions
 ```{r}
-duration_pred = predict(object = linear_modelx8, newdata = test_dataset)
+duration_pred = predict(object = linear_model, newdata = test_dataset)
 error = rmsle(test_dataset$trip_duration, duration_pred)
-
+train_dataset$trip_duration
 # This should be at least 0.4 or lower
 error
 ```
 
-
-## Apply best linear model to test data
+## Test
+### Apply best linear model to test data
 ```{r}
 dataset_test = read.csv("test.csv")
 dataset_test
@@ -260,21 +301,24 @@ dataset_test$pickup_time = pickup_time
 dataset_test = dataset_test %>%
   dplyr::select(-c(pickup_datetime))
 
-# max = max(dataset_test$pickup_time)
-# min = min(dataset_test$pickup_time)
-# temp = 0
-# for (i in 1:length(dataset_test$pickup_time)){
-#   temp[i] = (dataset_test$pickup_time[i] - min) / (max - min)
-# }
-# dataset_test$pickup_time = temp
-# 
-
 dataset_test
 ```
 
 ### Make predictions
 ```{r}
-duration_pred = predict(object = linear_modelx8, newdata = dataset_test)
+duration_pred = predict(object = linear_model, newdata = dataset_test)
+log_duration_pred = predict(object = log_linear_model2, newdata = dataset_test)
+
+head(duration_pred)
+head(log_duration_pred)
+
+duration_pred = apply(array(duration_pred), 1, round)
+log_duration_pred = apply(array(log_duration_pred), 1, round)
+
+head(duration_pred)
+head(log_duration_pred)
+
+
 ```
 
 ### Construct out-dataframe
@@ -288,7 +332,8 @@ out_dataframe
 write.csv(out_dataframe, "kaggle_data.csv", quote = F, row.names = F)
 ```
 
-
+## RMSLE
+Lowest: 0.68607
 
 
 

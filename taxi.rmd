@@ -16,7 +16,6 @@ library(REdaS)
 library(Metrics)
 library(corrplot)
 library(caTools)
-
 ```
 
 ## Data
@@ -242,13 +241,13 @@ log_linear_model = train_dataset %>% lm(formula = log1p(trip_duration) ~ log1p(d
 # summ4 = summary(log_linear_model4)
 
 summ = summary(linear_model)
-summ2 = summary(log_linear_model2)
+summ2 = summary(log_linear_model)
 
 # summ1
 # summ2
 # summ3
 summ 
-summ4
+summ2
 ```
 
 ### Make predictions
@@ -307,19 +306,20 @@ dataset_test
 ### Make predictions
 ```{r}
 duration_pred = predict(object = linear_model, newdata = dataset_test)
-log_duration_pred = predict(object = log_linear_model2, newdata = dataset_test)
+log_duration_pred = predict(object = log_linear_model, newdata = dataset_test)
 
 head(duration_pred)
 head(log_duration_pred)
+
+# log_duration_pred = apply(array(log_duration_pred), 1, exp)
 
 duration_pred = apply(array(duration_pred), 1, round)
 log_duration_pred = apply(array(log_duration_pred), 1, round)
 
 head(duration_pred)
 head(log_duration_pred)
-
-
 ```
+
 
 ### Construct out-dataframe
 ```{r}

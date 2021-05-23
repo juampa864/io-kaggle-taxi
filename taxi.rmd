@@ -1,5 +1,5 @@
 ---
-title: "Kaggle NY Taxi Duration"
+title: "Kaggle NY Taxi Trip Duration"
 output: html_notebook
 ---
 
@@ -10,21 +10,18 @@ library(ggplot2)
 library(caret)
 library(MASS)
 library(e1071)
-library(neuralnet)
 library(corrplot)
 library(REdaS)
 library(Metrics)
 library(corrplot)
 library(caTools)
+library(rpart)
+library(tree)
 ```
 
 ## Data
 ```{r}
-data = read.csv("train.csv")
-```
-
-```{r}
-dataset = data
+dataset = read.csv("train.csv")
 ```
 
 ## Functions
@@ -50,21 +47,6 @@ haversine <- function(row_lon_lat) {
 
   distance = R * c
 }
-```
-
-### Remove and replace NA values UNUSED
-```{r}
-# data_rm.na = function(data){
-#   value = 0
-#   
-#   mu = mean(data, na.rm = T)
-#   sd = sd(data, na.rm = T)
-#   
-#   value = ifelse(is.na(data), as.integer(rnorm(1, mu, sd)), data)
-#   value = ifelse(value < 0, value*-1, value)
-# 
-#   value
-# }
 ```
 
 ### Calculate Pickup time
@@ -101,6 +83,7 @@ get.time = function(data){
 }
 ```
 
+## Datos
 ### Remove columns
 ```{r}
 dataset = dataset %>%
@@ -145,10 +128,12 @@ dataset = dataset %>%
   dplyr::select(c(passenger_count, trip_duration, distance, pickup_time))
 dataset
 ```
+
 ### Visualize trip_duration and pickup_time
 ```{r}
 # This indicates skewed data graphically
-ggplot(data = dataset, aes(trip_duration)) + geom_histogram()
+ggplot(data = dataset, aes(trip_duration)) + geom_histogram() + 
+  scale_x_log10() + scale_y_log10()
 ```
 
 ### Skewness of the variables
@@ -163,7 +148,6 @@ skewness(dataset$pickup_time) # -0.44 just ok
 skewness(dataset$distance) # 32.63091 high
 skewness(dataset$passenger_count) # 2.1280 high
 ```
-
 
 ```{r}
 # No aparent meaningful between both variables.
@@ -192,7 +176,6 @@ ggplot(data = dataset, aes(x = pickup_time, y = trip_duration)) +
 # dataset
 ```
 
-
 ## Training 
 ### Remove NA values
 ```{r}
@@ -207,7 +190,7 @@ train_dataset = subset(dataset, split == "TRUE")
 test_dataset = subset(dataset, split == "FALSE")
 ```
 
-### Linear Models
+### Variables for prediction
 ```{r}
 # Variable to predict
 trip_duration = train_dataset$trip_duration
@@ -220,51 +203,48 @@ pickup_time = train_dataset$pickup_time
 
 ### Normal linear model
 ```{r}
-linear_model = train_dataset %>% lm(formula = trip_duration ~ distance + passenger_count + pickup_time)
+linear_model = lm(formula = trip_duration ~ distance + passenger_count + pickup_time, data = train_dataset)
+linear.pred = predict(linear_model, newdata = test_dataset)
+linear.pred = round(linear.pred)
+head(linear.pred)
 ```
 
 ### Log Transform linear models
 ```{r}
-# log_linear_model1 = train_dataset %>% lm(formula = log1p(trip_duration) ~ distance + passenger_count + pickup_time)
-# log_linear_model3 = train_dataset %>% lm(formula = log1p(trip_duration) ~ log1p(distance) + log1p(passenger_count) + pickup_time)
-# log_linear_model4 = train_dataset %>% lm(formula = trip_duration ~ log1p(distance) + passenger_count + pickup_time)
-
 # Best Log model based on the summaries
-log_linear_model = train_dataset %>% lm(formula = log1p(trip_duration) ~ log1p(distance) + passenger_count + pickup_time)
+log_linear_model = lm(formula = log1p(trip_duration) ~ log1p(distance) + passenger_count + pickup_time, data = train_dataset)
+log.pred = predict(log_linear_model, newdata = test_dataset)
+log.pred = round(exp(log.pred))
+head(log.pred)
 ```
 
+### Regression Tree
+```{r}
+tree = rpart(formula = log1p(trip_duration) ~ log1p(distance) + passenger_count + pickup_time, method = "anova", data = train_dataset)
+
+tree.pred = predict(tree, newdata = test_dataset)
+tree.pred = round(exp(tree.pred))
+head(tree.pred)
+```
 
 ### Summaries
 ```{r}
-# summ1 = summary(log_linear_model1)
-# summ3 = summary(log_linear_model3)
-# summ4 = summary(log_linear_model4)
-
-summ = summary(linear_model)
+summ1 = summary(linear_model)
 summ2 = summary(log_linear_model)
+summ3 = summary(tree)
 
-# summ1
-# summ2
-# summ3
-summ 
+summ1 
 summ2
-```
-
-### Make predictions
-```{r}
-duration_pred = predict(object = linear_model, newdata = test_dataset)
-error = rmsle(test_dataset$trip_duration, duration_pred)
-train_dataset$trip_duration
-# This should be at least 0.4 or lower
-error
+summ3
 ```
 
 ## Test
-### Apply best linear model to test data
+### Data
 ```{r}
 dataset_test = read.csv("test.csv")
 dataset_test
 
+# ID for the dataset
 id = dataset_test$id
 
 dataset_test = dataset_test %>%
@@ -305,25 +285,22 @@ dataset_test
 
 ### Make predictions
 ```{r}
-duration_pred = predict(object = linear_model, newdata = dataset_test)
+linear_duration_pred = predict(object = linear_model, newdata = dataset_test)
+linear_duration_pred = apply(array(linear_duration_pred), 1, round)
+head(linear_duration_pred)
+
 log_duration_pred = predict(object = log_linear_model, newdata = dataset_test)
-
-head(duration_pred)
+log_duration_pred = round(exp(log_duration_pred))
 head(log_duration_pred)
 
-# log_duration_pred = apply(array(log_duration_pred), 1, exp)
-
-duration_pred = apply(array(duration_pred), 1, round)
-log_duration_pred = apply(array(log_duration_pred), 1, round)
-
-head(duration_pred)
-head(log_duration_pred)
+tree.pred = predict(tree, newdata = dataset_test)
+tree.pred = round(exp(tree.pred))
+head(tree.pred)
 ```
-
 
 ### Construct out-dataframe
 ```{r}
-out_dataframe = data.frame(id = id, trip_duration = duration_pred)
+out_dataframe = data.frame(id = id, trip_duration = linear_duration_pred)
 out_dataframe
 ```
 
@@ -332,11 +309,10 @@ out_dataframe
 write.csv(out_dataframe, "kaggle_data.csv", quote = F, row.names = F)
 ```
 
-## RMSLE
-Lowest: 0.68607
-
-
-
+## Kaggle RMSLE
+Tree:       0.52470 \
+Log:        0.52952 \
+Linear:     0.66454
 
 
 
